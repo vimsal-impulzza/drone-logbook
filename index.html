@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F6F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E151C" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Bitácora de vuelo y checklist para operaciones de dron con dock. Se llena en el navegador y se descarga en PDF o Excel.">
+<title>Bitácora de vuelo del dron</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23121B24'/%3E%3Cpath d='M8 22h16M16 8v10M11 13l5-5 5 5' stroke='%23F2B705' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ---------- Tokens ----------
+     Una sola tinta para texto y estructura, un acento (ámbar de balizamiento)
+     reservado a la acción principal, y tres colores de estado. */
+  :root {
+    --papel: #F5F6F7;
+    --superficie: #FFFFFF;
+    --texto: #121B24;
+    --texto-sec: #55616D;
+    --linea: #D8DDE2;          /* separadores decorativos */
+    --borde: #7B8794;          /* bordes de controles: 3,3:1 o más */
+    --campo-calc: #ECEFF1;
+    --acento: #F2B705;
+    --acento-hover: #DDA600;
+    --sobre-acento: #121B24;
+    --ok: #1E7A4C;
+    --falla: #B3261E;
+    --na: #55616D;
+    --sobre-estado: #FFFFFF;
+    --foco: #1F5FBF;
+    --fuente: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --fuente-titulo: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", system-ui, sans-serif;
+    --fuente-datos: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --alto-cabecera: 120px;    /* se mide con JS */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --papel: #0E151C;
+      --superficie: #151E27;
+      --texto: #E7ECF0;
+      --texto-sec: #9AA7B3;
+      --linea: #26323E;
+      --borde: #5E6E7E;
+      --campo-calc: #1B2631;
+      --ok: #3FB27F;
+      --falla: #F0786F;
+      --na: #9AA7B3;
+      --sobre-estado: #0E151C;  /* texto oscuro sobre estados claros: 6,5:1 a 7,4:1 */
+      --foco: #7FB0FF;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-padding-top: calc(var(--alto-cabecera) + 16px); -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--fuente);
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--texto);
+    background: var(--papel);
+  }
+  :where(button, input, select, textarea):focus-visible {
+    outline: 3px solid var(--foco);
+    outline-offset: 2px;
+  }
+
+  /* ---------- Íconos (línea de 1,75 px, un solo juego) ---------- */
+  .ico {
+    width: 1.25em;
+    height: 1.25em;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ---------- Cabecera ---------- */
+  .cabecera {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--superficie);
+    border-bottom: 1px solid var(--linea);
+  }
+  .cabecera-interior {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 10px 20px 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 2px 24px;
+  }
+  .id-bloque { min-width: 0; padding-bottom: 6px; }
+  .marca { margin: 0; font-size: .875rem; font-weight: 500; color: var(--texto-sec); }
+  .id-vuelo {
+    margin: 0;
+    font-family: var(--fuente-datos);
+    font-weight: 500;
+    font-size: clamp(1.25rem, 4.6vw, 1.75rem);
+    line-height: 1.25;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .id-vuelo .tenue { color: var(--texto-sec); }
+  .id-vuelo.vacio { font-family: var(--fuente); font-size: 1rem; color: var(--texto-sec); }
+
+  .pestanas { display: flex; gap: 20px; }
+  .pestana {
+    font: inherit;
+    font-weight: 500;
+    color: var(--texto-sec);
+    background: transparent;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    min-height: 44px;
+    padding: 8px 2px 5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .pestana:hover { color: var(--texto); }
+  .pestana[aria-selected="true"] {
+    color: var(--texto);
+    font-weight: 600;
+    border-bottom-color: var(--texto);
+  }
+
+  /* ---------- Botones ---------- */
+  .btn {
+    font: inherit;
+    font-weight: 600;
+    font-size: .9375rem;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    background: transparent;
+    color: var(--texto);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-primario { background: var(--acento); color: var(--sobre-acento); }
+  .btn-primario:hover { background: var(--acento-hover); }
+  .btn-sec { border-color: var(--borde); }
+  .btn-sec:hover { background: var(--campo-calc); }
+  .btn-sec:disabled { color: var(--texto-sec); border-color: var(--linea); cursor: default; background: transparent; }
+  .btn-peligro { border-color: var(--falla); color: var(--falla); }
+  .btn-peligro:hover { background: var(--falla); color: var(--sobre-estado); }
+  .btn-peligro-solido { background: var(--falla); color: var(--sobre-estado); }
+
+  /* ---------- Contenido ---------- */
+  main { max-width: 880px; margin: 0 auto; padding: 8px 20px 56px; }
+  .bloque { padding: 28px 0 10px; border-top: 2px solid var(--texto); margin-top: 20px; }
+  .bloque:first-child { margin-top: 12px; }
+  .bloque-cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 16px;
+  }
+  h2 {
+    margin: 0;
+    font-family: var(--fuente-titulo);
+    font-weight: 600;
+    font-size: 1.375rem;
+    line-height: 1.25;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2 .ico { width: 1.15em; height: 1.15em; color: var(--texto-sec); }
+  h3 {
+    margin: 22px 0 2px;
+    font-size: .9375rem;
+    font-weight: 600;
+    color: var(--texto-sec);
+  }
+  .nota { margin: 0; font-size: .875rem; color: var(--texto-sec); }
+
+  .rejilla {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+    gap: 18px 20px;
+    padding-bottom: 20px;
+  }
+  /* Los campos de fecha llevan botón "Ahora": necesitan más ancho para no recortar la hora. */
+  .rejilla.ancha { grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); }
+  .campo { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .campo.completo { grid-column: 1 / -1; }
+  .campo[hidden] { display: none; }
+  .campo label { font-size: .9375rem; font-weight: 500; }
+  input, select, textarea {
+    font: inherit;
+    color: var(--texto);
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 4px;
+    padding: 10px 12px;
+    width: 100%;
+    min-height: 44px;
+  }
+  textarea { resize: vertical; }
+  input::placeholder, textarea::placeholder { color: var(--texto-sec); opacity: 1; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--foco); outline-offset: 0; }
+  input[readonly] {
+    background: var(--campo-calc);
+    border-color: var(--linea);
+    font-family: var(--fuente-datos);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--falla); box-shadow: inset 3px 0 0 var(--falla); }
+  .error-campo { margin: 0; display: flex; align-items: flex-start; gap: 6px; font-size: .875rem; color: var(--falla); font-weight: 500; }
+  .error-campo .ico { margin-top: .1em; }
+  .error-campo[hidden] { display: none; }
+
+  .entrada-hora { display: flex; gap: 8px; }
+  .entrada-hora input { flex: 1 1 auto; min-width: 0; padding-left: 10px; padding-right: 8px; }
+  .entrada-hora .btn { flex: none; padding: 0 14px; }
+
+  /* ---------- Checklist ---------- */
+  .resumen { font-size: .9375rem; color: var(--texto-sec); }
+  .resumen .cifra { font-family: var(--fuente-datos); font-weight: 500; color: var(--texto); font-variant-numeric: tabular-nums; }
+  .resumen .falla { color: var(--falla); font-weight: 600; margin-left: 12px; }
+  .encabezado-bloque-der { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+
+  ul.items { list-style: none; margin: 0; padding: 0; }
+  ul.items li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 20px;
+    min-height: 60px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--linea);
+  }
+  ul.items li:last-child { border-bottom: 0; }
+  .item-texto { flex: 1 1 260px; }
+
+  .seg {
+    position: relative;
+    display: inline-flex;
+    border: 1px solid var(--borde);
+    border-radius: 4px;
+    overflow: hidden;
+    flex: none;
+  }
+  .seg input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    min-height: 0;
+  }
+  .seg label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 76px;
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: .9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--superficie);
+    border-left: 1px solid var(--borde);
+    user-select: none;
+  }
+  .seg label:first-of-type { border-left: 0; }
+  .seg label:hover { background: var(--campo-calc); }
+  .seg input:focus-visible + label { outline: 3px solid var(--foco); outline-offset: -3px; }
+  .seg input:checked + label { color: var(--sobre-estado); font-weight: 600; }
+  .seg input[value="ok"]:checked + label { background: var(--ok); }
+  .seg input[value="falla"]:checked + label { background: var(--falla); }
+  .seg input[value="na"]:checked + label { background: var(--na); }
+
+  /* ---------- Cierre: exportar y reiniciar ---------- */
+  .cierre { margin-top: 36px; padding-top: 24px; border-top: 2px solid var(--texto); }
+  .cierre-fila { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; }
+  .cierre-fila .btn-peligro { margin-left: auto; }
+  .estado { min-height: 1.5em; margin: 14px 0 0; font-size: .9375rem; font-weight: 500; }
+  .estado.error { color: var(--falla); }
+  .cierre .nota { margin-top: 4px; }
+
+  /* ---------- Diálogo de confirmación ---------- */
+  dialog {
+    width: min(440px, calc(100vw - 32px));
+    padding: 24px;
+    border: 1px solid var(--linea);
+    border-radius: 6px;
+    background: var(--superficie);
+    color: var(--texto);
+  }
+  dialog::backdrop { background: rgba(8, 13, 18, .6); }
+  dialog h2 { margin-bottom: 8px; }
+  dialog p { margin: 0 0 20px; color: var(--texto-sec); }
+  .dialogo-acciones { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .btn, .seg label, .pestana { transition: background-color .12s, color .12s; }
+  }
+  @media (max-width: 560px) {
+    .cabecera-interior, main { padding-left: 16px; padding-right: 16px; }
+    .pestanas { width: 100%; gap: 0; }
+    .pestana { flex: 1 1 0; }
+    .cierre-fila .btn { flex: 1 1 100%; }
+    .cierre-fila .btn-peligro { margin-left: 0; margin-top: 10px; }
+    .seg { width: 100%; }
+    .seg label { flex: 1 1 0; }
+    .btn-ahora .txt { display: none; }
+    .btn-ahora { padding: 0 12px; }
+  }
+  @media (prefers-contrast: more) {
+    :root { --linea: var(--borde); }
+  }
+</style>
+</head>
+<body>
+
+<header class="cabecera" id="cabecera">
+  <div class="cabecera-interior">
+    <div class="id-bloque">
+      <h1 class="marca">Bitácora de vuelo del dron</h1>
+      <p class="id-vuelo" id="idVuelo"></p>
+    </div>
+    <div class="pestanas" role="tablist" aria-label="Secciones">
+      <button type="button" class="pestana" role="tab" id="tab-bitacora" data-icono="bitacora" aria-controls="panel-bitacora" aria-selected="true">Bitácora</button>
+      <button type="button" class="pestana" role="tab" id="tab-checklist" data-icono="checklist" aria-controls="panel-checklist" aria-selected="false" tabindex="-1">Checklist</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="panel-bitacora" role="tabpanel" aria-labelledby="tab-bitacora" tabindex="0"></section>
+  <section id="panel-checklist" role="tabpanel" aria-labelledby="tab-checklist" tabindex="0" hidden></section>
+
+  <section class="cierre" aria-label="Exportar y reiniciar">
+    <div class="cierre-fila">
+      <button type="button" class="btn btn-primario" id="btnPdf" data-icono="descargar">Descargar PDF</button>
+      <button type="button" class="btn btn-sec" id="btnXlsx" data-icono="tabla">Descargar Excel</button>
+      <button type="button" class="btn btn-peligro" id="btnNuevo" data-icono="nuevo">Nuevo vuelo</button>
+    </div>
+    <p class="estado" id="estado" role="status" aria-live="polite"></p>
+    <p class="nota">El avance se guarda solo en este navegador. Descarga el PDF o el Excel para conservar el registro.</p>
+  </section>
+</main>
+
+<dialog id="dlgNuevo" aria-labelledby="dlgTitulo">
+  <h2 id="dlgTitulo">¿Empezar un vuelo nuevo?</h2>
+  <p>Se borrarán la bitácora y el checklist de este vuelo. Piloto, dron y dock se conservan.</p>
+  <div class="dialogo-acciones">
+    <button type="button" class="btn btn-sec" id="dlgCancelar" autofocus>Cancelar</button>
+    <button type="button" class="btn btn-peligro-solido" id="dlgConfirmar" data-icono="borrar">Borrar y empezar</button>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Definición de la bitácora ---------- */
+  var PANICO = 'Misión real (pánico)';
+
+  var BITACORA = [
+    { titulo: 'Identificación', campos: [
+      { id: 'tipo', label: 'Tipo de vuelo', tipo: 'select', opciones: ['Prueba', 'Entrenamiento', PANICO, 'Mantenimiento'] },
+      { id: 'piloto', label: 'Piloto o responsable', tipo: 'texto', recordar: true },
+      { id: 'mision', label: 'ID de misión en FlightHub 2', tipo: 'texto' }
+    ]},
+    { titulo: 'Equipo', campos: [
+      { id: 'dron', label: 'Dron', tipo: 'texto', recordar: true, placeholder: 'Matrice 4TD' },
+      { id: 'dock', label: 'Dock', tipo: 'texto', recordar: true, placeholder: 'Dock 3' },
+      { id: 'bateria', label: 'Batería', tipo: 'texto' },
+      { id: 'fw_dron', label: 'Firmware del dron', tipo: 'texto' },
+      { id: 'fw_dock', label: 'Firmware del dock', tipo: 'texto' }
+    ]},
+    { titulo: 'Misión', campos: [
+      { id: 'origen', label: 'Origen', tipo: 'texto', placeholder: 'Dock' },
+      { id: 'lat', label: 'Latitud del destino', tipo: 'numero', signo: true, min: -90, max: 90, placeholder: '-12.0464' },
+      { id: 'lon', label: 'Longitud del destino', tipo: 'numero', signo: true, min: -180, max: 180, placeholder: '-77.0428' },
+      { id: 'altura', label: 'Altura de vuelo', unidad: 'm', tipo: 'numero', min: 0 },
+      { id: 'objetivo', label: 'Objetivo o motivo', tipo: 'textarea', completo: true },
+      { id: 'evento', label: 'ID del evento de pánico', tipo: 'texto', siSolo: { campo: 'tipo', valor: PANICO } },
+      { id: 'dispositivo', label: 'Dispositivo que originó la alerta', tipo: 'texto', siSolo: { campo: 'tipo', valor: PANICO } }
+    ]},
+    { titulo: 'Tiempos', campos: [
+      { id: 't_alerta', label: 'Hora de la alerta o solicitud', tipo: 'fecha' },
+      { id: 't_despegue', label: 'Hora de despegue', tipo: 'fecha' },
+      { id: 't_llegada', label: 'Hora de llegada al punto', tipo: 'fecha' },
+      { id: 't_aterrizaje', label: 'Hora de aterrizaje', tipo: 'fecha' },
+      { id: 'duracion', label: 'Duración total del vuelo', tipo: 'calculado' },
+      { id: 'respuesta', label: 'Tiempo de respuesta (alerta a llegada)', tipo: 'calculado' }
+    ]},
+    { titulo: 'Condiciones', campos: [
+      { id: 'viento', label: 'Viento', unidad: 'km/h', tipo: 'numero', min: 0 },
+      { id: 'lluvia', label: 'Lluvia', tipo: 'select', opciones: ['Sin lluvia', 'Llovizna', 'Lluvia'] },
+      { id: 'visibilidad', label: 'Visibilidad', tipo: 'select', opciones: ['Buena', 'Reducida', 'Mala'] },
+      { id: 'temperatura', label: 'Temperatura', unidad: '°C', tipo: 'numero', signo: true, min: -50, max: 60 },
+      { id: 'luz', label: 'Luz', tipo: 'select', opciones: ['Día', 'Noche', 'Amanecer o atardecer'] },
+      { id: 'gnss', label: 'Señal GNSS y RTK', tipo: 'texto', placeholder: 'Satélites y estado de RTK' },
+      { id: 'enlace', label: 'Calidad del enlace', tipo: 'select', opciones: ['Buena', 'Regular', 'Débil', 'Pérdida momentánea'] }
+    ]},
+    { titulo: 'Resultado', campos: [
+      { id: 'bat_ini', label: 'Batería al despegar', unidad: '%', tipo: 'numero', min: 0, max: 100 },
+      { id: 'bat_fin', label: 'Batería al aterrizar', unidad: '%', tipo: 'numero', min: 0, max: 100 },
+      { id: 'distancia', label: 'Distancia recorrida', unidad: 'km', tipo: 'numero', min: 0 },
+      { id: 'medios', label: 'Fotos o video capturados', tipo: 'select', opciones: ['Sí', 'No'] },
+      { id: 'medios_ubic', label: 'Dónde se guardaron', tipo: 'texto', siSolo: { campo: 'medios', valor: 'Sí' } },
+      { id: 'estado', label: 'Estado final', tipo: 'select', opciones: ['Completado', 'Abortado', 'Retorno automático', 'Fallo'] },
+      { id: 'incidentes', label: 'Incidentes o alertas', tipo: 'textarea', completo: true,
+        placeholder: 'Obstáculos, retorno automático, pérdida de enlace, advertencias del dron o del dock' },
+      { id: 'observaciones', label: 'Observaciones', tipo: 'textarea', completo: true }
+    ]}
+  ];
+
+  /* ---------- Definición del checklist ---------- */
+  var CHECKLIST = [
+    { id: 'pre', titulo: 'Pre-vuelo', nota: 'Antes de cada vuelo', grupos: [
+      { nombre: 'Dron', items: [
+        'Hélices sin daño y bien instaladas',
+        'Brazos, cuerpo y gimbal sin daños visibles',
+        'Lentes de cámara limpios (visible y térmica)',
+        'Sensores de obstáculos limpios y despejados',
+        'Batería cargada (nivel y salud)',
+        'Sin advertencias en la app ni en FlightHub 2'
+      ]},
+      { nombre: 'Dock', items: [
+        'Tapa abre y cierra bien',
+        'Plataforma de aterrizaje limpia y sin obstrucciones',
+        'Alimentación eléctrica estable',
+        'Conexión a internet activa',
+        'Dock en línea en FlightHub 2',
+        'Sensores ambientales funcionando (viento, lluvia, temperatura)'
+      ]},
+      { nombre: 'Misión', items: [
+        'Clima dentro de los límites operativos',
+        'Zona de vuelo sin restricciones y permisos vigentes',
+        'Altura de ruta segura sobre obstáculos',
+        'Punto de retorno a casa configurado',
+        'Acción ante pérdida de enlace configurada'
+      ]}
+    ]},
+    { id: 'post', titulo: 'Post-vuelo', nota: 'Después de cada vuelo', grupos: [
+      { nombre: '', items: [
+        'El dron aterrizó y se cargó en el dock',
+        'Inspección visual de hélices y cuerpo',
+        'Registro de vuelo descargado y guardado',
+        'Fotos y videos respaldados',
+        'Alertas o errores revisados',
+        'Bitácora completada'
+      ]}
+    ]},
+    { id: 'periodico', titulo: 'Periódico', nota: 'Semanal o mensual', grupos: [
+      { nombre: '', items: [
+        'Limpieza completa del dock y del dron',
+        'Revisión de hélices y motores',
+        'Salud de la batería',
+        'Actualizaciones de firmware pendientes',
+        'Revisión del sellado y desgaste del dock',
+        'Calibraciones requeridas (IMU, brújula, gimbal)',
+        'Vuelo de prueba controlado'
+      ]}
+    ]}
+  ];
+
+  var ESTADOS = { ok: 'OK', falla: 'Falla', na: 'N/A' };
+  var estadoChecklist = {};   // clave del ítem -> 'ok' | 'falla' | 'na'
+  var CLAVE_RECUERDO = 'dron-bitacora:recuerdo';
+  var CLAVE_BORRADOR = 'dron-bitacora:borrador';
+
+  /* ---------- Utilidades ---------- */
+  function $(sel, ctx) { return (ctx || document).querySelector(sel); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function ahoraLocal() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  /* El navegador omite los segundos cuando son 00 ("2026-11-02T10:51"):
+     se normaliza siempre a HH:MM:SS para que el ID y las horas sean estables. */
+  function conSegundos(dt) {
+    if (!dt) return '';
+    var p = dt.split('T'), h = (p[1] || '00:00').split(':');
+    return p[0] + 'T' + pad(h[0] || 0) + ':' + pad(h[1] || 0) + ':' + pad(h[2] ? String(h[2]).slice(0, 2) : 0);
+  }
+  function generarId(dt) {
+    if (!dt) return '';
+    var p = conSegundos(dt).split('T');
+    return 'VUELO-' + p[0].replace(/-/g, '') + '-' + p[1].replace(/:/g, '');
+  }
+  function fmtFecha(dt) {
+    if (!dt) return '';
+    var p = conSegundos(dt).split('T'), f = p[0].split('-');
+    return f[2] + '/' + f[1] + '/' + f[0] + ' ' + p[1];
+  }
+  function segundosEntre(a, b) {
+    if (!a || !b) return null;
+    return (Date.parse(conSegundos(b)) - Date.parse(conSegundos(a))) / 1000;
+  }
+  function fmtDuracion(seg) {
+    if (seg === null || isNaN(seg)) return '';
+    if (seg < 0) return 'Revisa las horas';
+    seg = Math.round(seg);
+    var h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = seg % 60, t = [];
+    if (h) t.push(h + ' h');
+    if (h || m) t.push(m + ' min');
+    t.push(s + ' s');
+    return t.join(' ');
+  }
+
+  /* ---------- Íconos ---------- */
+  var ICONOS = {
+    bitacora: '<path d="M7 3.5h7.5L19 8v12.5H7z"/><path d="M14.5 3.5V8H19M10 12.5h6M10 16.5h6"/>',
+    checklist: '<path d="M4 6.5l1.4 1.4L8 5.2M11 7h9M4 12.5l1.4 1.4L8 11.2M11 13h9M4 18.5l1.4 1.4L8 17.2M11 19h9"/>',
+    descargar: '<path d="M12 4v11M7.5 11l4.5 4.5 4.5-4.5M5 20h14"/>',
+    tabla: '<rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 10h16M4 14.5h16M10 5v14"/>',
+    nuevo: '<path d="M12 5v14M5 12h14"/>',
+    borrar: '<path d="M5 7h14M10 7V4.5h4V7M7 7l.9 12.5h8.2L17 7M10.5 11v5M13.5 11v5"/>',
+    reloj: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    ok: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    falla: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+    na: '<path d="M7 12h10"/>',
+    aviso: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5M12 16.2v.1"/>',
+    usuario: '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20c.8-3.6 3.8-5.5 7.5-5.5s6.7 1.9 7.5 5.5"/>',
+    dron: '<circle cx="12" cy="12" r="1.8"/><circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="5.5" r="2.5"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/><path d="M7.3 7.3l3.4 3.4M16.7 7.3l-3.4 3.4M7.3 16.7l3.4-3.4M16.7 16.7l-3.4-3.4"/>',
+    punto: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 0 0-13 0c0 5.4 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+    nube: '<path d="M7.5 18.5h9a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 6.6 9.6a4.45 4.45 0 0 0 .9 8.9z"/>',
+    bandera: '<path d="M6 21V4M6 5h11l-2 4 2 4H6"/>',
+    despegue: '<path d="M7 17L17 7M9 7h8v8"/>',
+    aterrizaje: '<path d="M12 4v12M7 11.5l5 5 5-5M5 20h14"/>',
+    calendario: '<rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
+    notas: '<path d="M5 6.5h14M5 11.5h14M5 16.5h9"/>'
+  };
+  var ICONO_SECCION = {
+    'Identificación': 'usuario', 'Equipo': 'dron', 'Misión': 'punto', 'Tiempos': 'reloj',
+    'Condiciones': 'nube', 'Resultado': 'bandera',
+    'Pre-vuelo': 'despegue', 'Post-vuelo': 'aterrizaje', 'Periódico': 'calendario',
+    'Observaciones del checklist': 'notas'
+  };
+  function icono(nombre) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('class', 'ico');
+    s.setAttribute('aria-hidden', 'true');
+    s.setAttribute('focusable', 'false');
+    s.innerHTML = ICONOS[nombre] || '';   // solo cadenas fijas definidas arriba
+    return s;
+  }
+  function tituloConIcono(h, texto) {
+    h.textContent = '';
+    if (ICONO_SECCION[texto]) h.appendChild(icono(ICONO_SECCION[texto]));
+    h.appendChild(document.createTextNode(texto));
+  }
+  function decorarIconos() {
+    document.querySelectorAll('[data-icono]').forEach(function (b) {
+      b.insertBefore(icono(b.getAttribute('data-icono')), b.firstChild);
+    });
+  }
+  function val(id) { var e = $('#f_' + id); return e ? e.value.trim() : ''; }
+  function setVal(id, v) { var e = $('#f_' + id); if (e) e.value = v; }
+  function campoDef(id) {
+    for (var i = 0; i < BITACORA.length; i++) {
+      for (var j = 0; j < BITACORA[i].campos.length; j++) {
+        if (BITACORA[i].campos[j].id === id) return BITACORA[i].campos[j];
+      }
+    }
+    return null;
+  }
+
+  /* Mensaje de estado persistente (no se descarta solo). */
+  function estado(msg, esError) {
+    var el = $('#estado');
+    el.textContent = msg || '';
+    el.classList.toggle('error', !!esError);
+  }
+
+  /* ---------- Almacenamiento local ---------- */
+  function leerJson(clave) {
+    try { return JSON.parse(localStorage.getItem(clave)); } catch (e) { return null; }
+  }
+  function escribirJson(clave, obj) {
+    try { localStorage.setItem(clave, JSON.stringify(obj)); } catch (e) { /* sin almacenamiento: no pasa nada */ }
+  }
+  function leerRecuerdo() { return leerJson(CLAVE_RECUERDO) || {}; }
+  function guardarRecuerdo() {
+    var r = {};
+    BITACORA.forEach(function (s) {
+      s.campos.forEach(function (c) { if (c.recordar) r[c.id] = val(c.id); });
+    });
+    escribirJson(CLAVE_RECUERDO, r);
+  }
+
+  var temporizadorBorrador;
+  function guardarBorrador() {
+    clearTimeout(temporizadorBorrador);
+    temporizadorBorrador = setTimeout(function () {
+      var campos = {};
+      BITACORA.forEach(function (s) {
+        s.campos.forEach(function (c) { if (c.tipo !== 'calculado') campos[c.id] = val(c.id); });
+      });
+      var obs = $('#obsChecklist');
+      escribirJson(CLAVE_BORRADOR, { campos: campos, estado: estadoChecklist, obs: obs ? obs.value : '' });
+    }, 300);
+  }
+  function borrarBorrador() {
+    clearTimeout(temporizadorBorrador);
+    try { localStorage.removeItem(CLAVE_BORRADOR); } catch (e) { /* nada */ }
+  }
+
+  /* ---------- Validación ---------- */
+  function parsearNumero(v) { return Number(String(v).trim().replace(',', '.')); }
+
+  function mensajeError(c) {
+    if (c.tipo !== 'numero') return '';
+    var v = val(c.id);
+    if (v === '') return '';
+    var n = parsearNumero(v);
+    if (isNaN(n)) return 'Escribe un número.';
+    if (c.min !== undefined && c.max !== undefined && (n < c.min || n > c.max)) {
+      return 'Debe estar entre ' + c.min + ' y ' + c.max + '.';
+    }
+    if (c.min !== undefined && n < c.min) return 'Debe ser ' + c.min + ' o más.';
+    if (c.max !== undefined && n > c.max) return 'Debe ser ' + c.max + ' o menos.';
+    return '';
+  }
+  function mostrarError(id, msg) {
+    var inp = $('#f_' + id), err = $('#e_' + id);
+    if (!inp || !err) return;
+    err.querySelector('.msg').textContent = msg || '';
+    err.hidden = !msg;
+    if (msg) inp.setAttribute('aria-invalid', 'true'); else inp.removeAttribute('aria-invalid');
+  }
+  function validarCampo(c) { mostrarError(c.id, mensajeError(c)); }
+
+  /* ---------- Render de la bitácora ---------- */
+  function crearCampo(c) {
+    var wrap = document.createElement('div');
+    wrap.className = 'campo' + (c.completo ? ' completo' : '');
+    wrap.dataset.campo = c.id;
+
+    var label = document.createElement('label');
+    label.htmlFor = 'f_' + c.id;
+    label.textContent = c.label + (c.unidad ? ' (' + c.unidad + ')' : '');
+
+    var input;
+    if (c.tipo === 'select') {
+      input = document.createElement('select');
+      input.add(new Option('Elegir', ''));
+      c.opciones.forEach(function (o) { input.add(new Option(o, o)); });
+    } else if (c.tipo === 'textarea') {
+      input = document.createElement('textarea');
+      input.rows = 3;
+    } else {
+      input = document.createElement('input');
+      if (c.tipo === 'fecha') {
+        input.type = 'datetime-local';
+        input.step = 1;   // muestra y permite segundos
+      } else if (c.tipo === 'numero' && c.signo) {
+        /* El teclado decimal de iOS no tiene signo menos: latitud, longitud y
+           temperatura necesitan negativos, así que se usa texto con patrón. */
+        input.type = 'text';
+        input.inputMode = 'text';
+        input.pattern = '-?[0-9]*[.,]?[0-9]*';
+        input.autocomplete = 'off';
+        input.setAttribute('autocapitalize', 'none');
+        input.spellcheck = false;
+      } else if (c.tipo === 'numero') {
+        input.type = 'number';
+        input.step = 'any';
+        input.inputMode = 'decimal';
+        if (c.min !== undefined) input.min = c.min;
+        if (c.max !== undefined) input.max = c.max;
+      } else {
+        input.type = 'text';
+      }
+      if (c.tipo === 'calculado') { input.readOnly = true; input.tabIndex = -1; }
+    }
+    input.id = 'f_' + c.id;
+    if (c.placeholder) input.placeholder = c.placeholder;
+    input.setAttribute('aria-describedby', 'e_' + c.id);
+    input.addEventListener('input', function () {
+      if (input.getAttribute('aria-invalid') === 'true') validarCampo(c);
+      alCambiar();
+    });
+    input.addEventListener('change', function () { validarCampo(c); alCambiar(); });
+
+    wrap.appendChild(label);
+    if (c.tipo === 'fecha') {
+      var fila = document.createElement('div');
+      fila.className = 'entrada-hora';
+      var ahora = document.createElement('button');
+      ahora.type = 'button';
+      ahora.className = 'btn btn-sec btn-ahora';
+      ahora.appendChild(icono('reloj'));
+      var txt = document.createElement('span');
+      txt.className = 'txt';
+      txt.textContent = 'Ahora';
+      ahora.appendChild(txt);
+      ahora.setAttribute('aria-label', 'Poner la hora actual en: ' + c.label);
+      ahora.addEventListener('click', function () {
+        input.value = ahoraLocal();
+        mostrarError(c.id, '');
+        alCambiar();
+      });
+      fila.appendChild(input);
+      fila.appendChild(ahora);
+      wrap.appendChild(fila);
+    } else {
+      wrap.appendChild(input);
+    }
+    var err = document.createElement('p');
+    err.className = 'error-campo';
+    err.id = 'e_' + c.id;
+    err.hidden = true;
+    err.appendChild(icono('aviso'));
+    var msg = document.createElement('span');
+    msg.className = 'msg';
+    err.appendChild(msg);
+    wrap.appendChild(err);
+    return wrap;
+  }
+
+  function renderBitacora() {
+    var panel = $('#panel-bitacora');
+    BITACORA.forEach(function (s) {
+      var bloque = document.createElement('div');
+      bloque.className = 'bloque';
+      var cab = document.createElement('div');
+      cab.className = 'bloque-cabecera';
+      var h = document.createElement('h2');
+      tituloConIcono(h, s.titulo);
+      cab.appendChild(h);
+      bloque.appendChild(cab);
+      var rejilla = document.createElement('div');
+      rejilla.className = 'rejilla' + (s.titulo === 'Tiempos' ? ' ancha' : '');
+      s.campos.forEach(function (c) { rejilla.appendChild(crearCampo(c)); });
+      bloque.appendChild(rejilla);
+      panel.appendChild(bloque);
+    });
+  }
+
+  function esVisible(c) {
+    return !c.siSolo || val(c.siSolo.campo) === c.siSolo.valor;
+  }
+  function actualizarVisibilidad() {
+    BITACORA.forEach(function (s) {
+      s.campos.forEach(function (c) {
+        if (!c.siSolo) return;
+        var w = $('[data-campo="' + c.id + '"]');
+        if (w) w.hidden = !esVisible(c);
+      });
+    });
+  }
+  function calcular() {
+    var dur = segundosEntre(val('t_despegue'), val('t_aterrizaje'));
+    var resp = segundosEntre(val('t_alerta'), val('t_llegada'));
+    setVal('duracion', fmtDuracion(dur));
+    setVal('respuesta', fmtDuracion(resp));
+    mostrarError('duracion', dur !== null && dur < 0 ? 'El aterrizaje es anterior al despegue.' : '');
+    mostrarError('respuesta', resp !== null && resp < 0 ? 'La llegada es anterior a la alerta.' : '');
+  }
+  function idActual() { return generarId(val('t_despegue')); }
+
+  function actualizarId() {
+    var el = $('#idVuelo'), id = idActual();
+    el.textContent = '';
+    el.classList.toggle('vacio', !id);
+    if (!id) { el.textContent = 'Falta la hora de despegue'; return; }
+    var p = id.split('-');   // VUELO, fecha, hora
+    [[p[0], true], ['-', true], [p[1], false], ['-', true], [p[2], false]].forEach(function (x) {
+      var s = document.createElement('span');
+      if (x[1]) s.className = 'tenue';
+      s.textContent = x[0];
+      el.appendChild(s);
+    });
+    if (val('t_despegue')) mostrarError('t_despegue', '');
+  }
+  function alCambiar() {
+    calcular();
+    actualizarVisibilidad();
+    actualizarId();
+    guardarRecuerdo();
+    guardarBorrador();
+  }
+
+  /* ---------- Render del checklist ---------- */
+  function claveItem(secId, gi, ii) { return secId + '_' + gi + '_' + ii; }
+
+  function resumenSeccion(sec) {
+    var total = 0, marcados = 0, fallas = 0;
+    sec.grupos.forEach(function (g, gi) {
+      g.items.forEach(function (_, ii) {
+        total++;
+        var e = estadoChecklist[claveItem(sec.id, gi, ii)];
+        if (e) marcados++;
+        if (e === 'falla') fallas++;
+      });
+    });
+    return { total: total, marcados: marcados, fallas: fallas };
+  }
+  function actualizarResumenes() {
+    CHECKLIST.forEach(function (sec) {
+      var r = resumenSeccion(sec);
+      var el = $('#resumen_' + sec.id);
+      el.textContent = '';
+      var c = document.createElement('span');
+      c.className = 'cifra';
+      c.textContent = r.marcados + ' / ' + r.total;
+      el.appendChild(c);
+      el.appendChild(document.createTextNode(' revisados'));
+      if (r.fallas > 0) {
+        var f = document.createElement('span');
+        f.className = 'falla';
+        f.textContent = r.fallas + (r.fallas === 1 ? ' con falla' : ' con fallas');
+        el.appendChild(f);
+      }
+      var btn = $('#pend_' + sec.id);
+      if (btn) btn.disabled = r.marcados === r.total;
+    });
+  }
+
+  function crearItem(sec, gi, ii, texto) {
+    var clave = claveItem(sec.id, gi, ii);
+    var li = document.createElement('li');
+    var span = document.createElement('span');
+    span.className = 'item-texto';
+    span.textContent = texto;
+    li.appendChild(span);
+
+    var seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', texto);
+    Object.keys(ESTADOS).forEach(function (k) {
+      var inp = document.createElement('input');
+      inp.type = 'radio';
+      inp.name = clave;
+      inp.value = k;
+      inp.id = clave + '_' + k;
+      inp.addEventListener('change', function () {
+        estadoChecklist[clave] = k;
+        actualizarResumenes();
+        guardarBorrador();
+      });
+      var lab = document.createElement('label');
+      lab.htmlFor = inp.id;
+      lab.appendChild(icono(k));
+      lab.appendChild(document.createTextNode(ESTADOS[k]));
+      seg.appendChild(inp);
+      seg.appendChild(lab);
+    });
+    li.appendChild(seg);
+    return li;
+  }
+
+  function renderChecklist() {
+    var panel = $('#panel-checklist');
+    CHECKLIST.forEach(function (sec) {
+      var bloque = document.createElement('div');
+      bloque.className = 'bloque';
+
+      var cab = document.createElement('div');
+      cab.className = 'bloque-cabecera';
+      var izq = document.createElement('div');
+      var h = document.createElement('h2');
+      tituloConIcono(h, sec.titulo);
+      var nota = document.createElement('p');
+      nota.className = 'nota';
+      nota.textContent = sec.nota;
+      izq.appendChild(h);
+      izq.appendChild(nota);
+
+      var der = document.createElement('div');
+      der.className = 'encabezado-bloque-der';
+      var resumen = document.createElement('span');
+      resumen.className = 'resumen';
+      resumen.id = 'resumen_' + sec.id;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sec';
+      btn.id = 'pend_' + sec.id;
+      btn.textContent = 'Marcar pendientes como OK';
+      btn.addEventListener('click', function () { marcarPendientesOk(sec); });
+      der.appendChild(resumen);
+      der.appendChild(btn);
+
+      cab.appendChild(izq);
+      cab.appendChild(der);
+      bloque.appendChild(cab);
+
+      sec.grupos.forEach(function (g, gi) {
+        if (g.nombre) {
+          var h3 = document.createElement('h3');
+          h3.textContent = g.nombre;
+          bloque.appendChild(h3);
+        }
+        var ul = document.createElement('ul');
+        ul.className = 'items';
+        g.items.forEach(function (t, ii) { ul.appendChild(crearItem(sec, gi, ii, t)); });
+        bloque.appendChild(ul);
+      });
+      panel.appendChild(bloque);
+    });
+
+    var obs = document.createElement('div');
+    obs.className = 'bloque';
+    var h2 = document.createElement('h2');
+    tituloConIcono(h2, 'Observaciones del checklist');
+    var campo = document.createElement('div');
+    campo.className = 'campo completo';
+    campo.style.marginTop = '14px';
+    var ta = document.createElement('textarea');
+    ta.id = 'obsChecklist';
+    ta.rows = 3;
+    ta.setAttribute('aria-label', 'Observaciones del checklist');
+    ta.addEventListener('input', guardarBorrador);
+    campo.appendChild(ta);
+    obs.appendChild(h2);
+    obs.appendChild(campo);
+    panel.appendChild(obs);
+
+    actualizarResumenes();
+  }
+
+  /* Solo toca lo que aún no se revisó: nunca pisa una Falla ni un N/A ya registrados. */
+  function marcarPendientesOk(sec) {
+    sec.grupos.forEach(function (g, gi) {
+      g.items.forEach(function (_, ii) {
+        var clave = claveItem(sec.id, gi, ii);
+        if (estadoChecklist[clave]) return;
+        estadoChecklist[clave] = 'ok';
+        $('#' + clave + '_ok').checked = true;
+      });
+    });
+    actualizarResumenes();
+    guardarBorrador();
+  }
+
+  /* ---------- Pestañas ---------- */
+  var PESTANAS = ['bitacora', 'checklist'];
+  function mostrarPestana(nombre, enfocar) {
+    PESTANAS.forEach(function (n) {
+      var activa = n === nombre, t = $('#tab-' + n);
+      t.setAttribute('aria-selected', activa ? 'true' : 'false');
+      t.tabIndex = activa ? 0 : -1;
+      $('#panel-' + n).hidden = !activa;
+      if (activa && enfocar) t.focus();
+    });
+    window.scrollTo(0, 0);
+  }
+  function teclaPestana(e) {
+    var i = PESTANAS.indexOf(e.currentTarget.id.replace('tab-', '')), n = PESTANAS.length, j = null;
+    if (e.key === 'ArrowRight') j = (i + 1) % n;
+    else if (e.key === 'ArrowLeft') j = (i - 1 + n) % n;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = n - 1;
+    if (j === null) return;
+    e.preventDefault();
+    mostrarPestana(PESTANAS[j], true);
+  }
+
+  /* ---------- Datos para exportar ---------- */
+  function etiqueta(c) { return c.label + (c.unidad ? ' (' + c.unidad + ')' : ''); }
+
+  function datosBitacora() {
+    return BITACORA.map(function (s) {
+      return {
+        titulo: s.titulo,
+        filas: s.campos.filter(esVisible).map(function (c) {
+          var v = val(c.id);
+          return [etiqueta(c), c.tipo === 'fecha' ? fmtFecha(v) : v];
+        })
+      };
+    });
+  }
+  function datosChecklist() {
+    return CHECKLIST.map(function (sec) {
+      return {
+        titulo: sec.titulo,
+        grupos: sec.grupos.map(function (g, gi) {
+          return {
+            nombre: g.nombre,
+            items: g.items.map(function (t, ii) {
+              var e = estadoChecklist[claveItem(sec.id, gi, ii)];
+              return { texto: t, estado: e ? ESTADOS[e] : 'Sin revisar' };
+            })
+          };
+        })
+      };
+    });
+  }
+  function obsChecklist() { return $('#obsChecklist').value.trim(); }
+
+  function idListoParaExportar() {
+    var id = idActual();
+    if (!id) {
+      var msg = 'Indica la hora de despegue: con ella se genera el ID del vuelo.';
+      mostrarPestana('bitacora');
+      mostrarError('t_despegue', msg);
+      estado(msg, true);
+      var campo = $('#f_t_despegue');
+      if (campo) campo.focus();
+      return null;
+    }
+    var malos = [];
+    BITACORA.forEach(function (s) {
+      s.campos.forEach(function (c) { var m = mensajeError(c); if (m) { validarCampo(c); malos.push(c); } });
+    });
+    if (malos.length) {
+      mostrarPestana('bitacora');
+      estado('Hay ' + malos.length + (malos.length === 1 ? ' dato' : ' datos') + ' por corregir antes de exportar.', true);
+      $('#f_' + malos[0].id).focus();
+      return null;
+    }
+    return id;
+  }
+
+  /* ---------- PDF ---------- */
+  function descargarPdf() {
+    var id = idListoParaExportar();
+    if (!id) return;
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      estado('No se cargó la librería de PDF. Revisa tu conexión a internet.', true);
+      return;
+    }
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({ unit: 'pt', format: 'letter' });
+    var izq = 40, der = 572;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(18, 27, 36);
+    doc.text('Bitácora de vuelo', izq, 50);
+    doc.setFontSize(12);
+    doc.setFont('courier', 'normal');
+    doc.text(id, izq, 70);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(85, 97, 109);
+    doc.text('Generado: ' + fmtFecha(ahoraLocal()), der, 70, { align: 'right' });
+
+    var y = 88;
+    datosBitacora().forEach(function (s) {
+      var filas = s.filas.map(function (f) { return [f[0], f[1] || '—']; });
+      doc.autoTable({
+        startY: y,
+        head: [[{ content: s.titulo, colSpan: 2 }]],
+        body: filas,
+        theme: 'grid',
+        margin: { left: izq, right: 612 - der },
+        styles: { fontSize: 9, cellPadding: 4, lineColor: [216, 221, 226], textColor: [18, 27, 36] },
+        headStyles: { fillColor: [18, 27, 36], textColor: [255, 255, 255], fontSize: 10 },
+        columnStyles: { 0: { cellWidth: 190, fontStyle: 'bold' } }
+      });
+      y = doc.lastAutoTable.finalY + 14;
+    });
+
+    doc.addPage();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(18, 27, 36);
+    doc.text('Checklist del dron', izq, 50);
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(12);
+    doc.text(id, izq, 70);
+
+    y = 88;
+    datosChecklist().forEach(function (s) {
+      var cuerpo = [];
+      s.grupos.forEach(function (g) {
+        if (g.nombre) {
+          cuerpo.push([{ content: g.nombre, colSpan: 2,
+            styles: { fontStyle: 'bold', fillColor: [236, 239, 241] } }]);
+        }
+        g.items.forEach(function (it) { cuerpo.push([it.texto, it.estado]); });
+      });
+      doc.autoTable({
+        startY: y,
+        head: [[{ content: s.titulo, colSpan: 2 }]],
+        body: cuerpo,
+        theme: 'grid',
+        margin: { left: izq, right: 612 - der },
+        styles: { fontSize: 9, cellPadding: 4, lineColor: [216, 221, 226], textColor: [18, 27, 36] },
+        headStyles: { fillColor: [18, 27, 36], textColor: [255, 255, 255], fontSize: 10 },
+        columnStyles: { 1: { cellWidth: 90, halign: 'center' } },
+        didParseCell: function (d) {
+          if (d.section === 'body' && d.column.index === 1 && d.row.raw.length === 2) {
+            var t = d.cell.raw;
+            if (t === 'OK') d.cell.styles.textColor = [30, 122, 76];
+            else if (t === 'Falla') { d.cell.styles.textColor = [179, 38, 30]; d.cell.styles.fontStyle = 'bold'; }
+            else if (t === 'Sin revisar') d.cell.styles.textColor = [85, 97, 109];
+          }
+        }
+      });
+      y = doc.lastAutoTable.finalY + 14;
+    });
+
+    var obs = obsChecklist();
+    doc.autoTable({
+      startY: y,
+      head: [['Observaciones del checklist']],
+      body: [[obs || '—']],
+      theme: 'grid',
+      margin: { left: izq, right: 612 - der },
+      styles: { fontSize: 9, cellPadding: 4, lineColor: [216, 221, 226], textColor: [18, 27, 36] },
+      headStyles: { fillColor: [18, 27, 36], textColor: [255, 255, 255], fontSize: 10 }
+    });
+
+    var n = doc.getNumberOfPages();
+    for (var i = 1; i <= n; i++) {
+      doc.setPage(i);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(85, 97, 109);
+      doc.text(id + '  |  Página ' + i + ' de ' + n, 306, 770, { align: 'center' });
+    }
+
+    doc.save(id + '.pdf');
+    guardarRecuerdo();
+    estado('Descargado: ' + id + '.pdf');
+  }
+
+  /* ---------- Excel ---------- */
+  function descargarExcel() {
+    var id = idListoParaExportar();
+    if (!id) return;
+    if (!window.XLSX) {
+      estado('No se cargó la librería de Excel. Revisa tu conexión a internet.', true);
+      return;
+    }
+    var wb = XLSX.utils.book_new();
+
+    var filasB = [['Bitácora de vuelo'], ['ID de vuelo', id], []];
+    datosBitacora().forEach(function (s) {
+      filasB.push([s.titulo]);
+      s.filas.forEach(function (f) { filasB.push(f); });
+      filasB.push([]);
+    });
+    var wsB = XLSX.utils.aoa_to_sheet(filasB);
+    wsB['!cols'] = [{ wch: 38 }, { wch: 64 }];
+    XLSX.utils.book_append_sheet(wb, wsB, 'Bitácora');
+
+    var filasC = [['ID de vuelo', id], [], ['Sección', 'Grupo', 'Ítem', 'Estado']];
+    datosChecklist().forEach(function (s) {
+      s.grupos.forEach(function (g) {
+        g.items.forEach(function (it) { filasC.push([s.titulo, g.nombre, it.texto, it.estado]); });
+      });
+    });
+    filasC.push([]);
+    filasC.push(['Observaciones del checklist', '', obsChecklist()]);
+    var wsC = XLSX.utils.aoa_to_sheet(filasC);
+    wsC['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 62 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsC, 'Checklist');
+
+    XLSX.writeFile(wb, id + '.xlsx');
+    guardarRecuerdo();
+    estado('Descargado: ' + id + '.xlsx');
+  }
+
+  /* ---------- Nuevo vuelo ---------- */
+  function reiniciarVuelo() {
+    var recuerdo = leerRecuerdo();
+    BITACORA.forEach(function (s) {
+      s.campos.forEach(function (c) {
+        setVal(c.id, c.recordar ? (recuerdo[c.id] || '') : '');
+        mostrarError(c.id, '');
+      });
+    });
+    setVal('t_despegue', ahoraLocal());
+    estadoChecklist = {};
+    document.querySelectorAll('#panel-checklist input[type="radio"]').forEach(function (r) { r.checked = false; });
+    $('#obsChecklist').value = '';
+    actualizarResumenes();
+    borrarBorrador();
+    alCambiar();
+    mostrarPestana('bitacora');
+    estado('Vuelo nuevo listo.');
+  }
+  function pedirNuevoVuelo() {
+    var dlg = $('#dlgNuevo');
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else if (window.confirm('Se borrarán la bitácora y el checklist de este vuelo. ¿Empezar un vuelo nuevo?')) reiniciarVuelo();
+  }
+
+  /* ---------- Borrador ---------- */
+  function restaurarBorrador(b) {
+    Object.keys(b.campos || {}).forEach(function (k) { setVal(k, b.campos[k]); });
+    estadoChecklist = b.estado || {};
+    Object.keys(estadoChecklist).forEach(function (clave) {
+      var r = $('#' + clave + '_' + estadoChecklist[clave]);
+      if (r) r.checked = true; else delete estadoChecklist[clave];
+    });
+    $('#obsChecklist').value = b.obs || '';
+  }
+
+  /* ---------- Altura de la cabecera fija ---------- */
+  function medirCabecera() {
+    document.documentElement.style.setProperty('--alto-cabecera', $('#cabecera').offsetHeight + 'px');
+  }
+
+  /* ---------- Inicio ---------- */
+  function iniciar() {
+    decorarIconos();
+    renderBitacora();
+    renderChecklist();
+
+    var borrador = leerJson(CLAVE_BORRADOR);
+    if (borrador && borrador.campos) {
+      restaurarBorrador(borrador);
+      estado('Se recuperó el avance guardado de este vuelo.');
+    } else {
+      var recuerdo = leerRecuerdo();
+      Object.keys(recuerdo).forEach(function (k) { setVal(k, recuerdo[k]); });
+      setVal('t_despegue', ahoraLocal());
+    }
+    actualizarResumenes();
+    alCambiar();
+
+    PESTANAS.forEach(function (n) {
+      var t = $('#tab-' + n);
+      t.addEventListener('click', function () { mostrarPestana(n); });
+      t.addEventListener('keydown', teclaPestana);
+    });
+    $('#btnPdf').addEventListener('click', descargarPdf);
+    $('#btnXlsx').addEventListener('click', descargarExcel);
+    $('#btnNuevo').addEventListener('click', pedirNuevoVuelo);
+    $('#dlgCancelar').addEventListener('click', function () { $('#dlgNuevo').close(); });
+    $('#dlgConfirmar').addEventListener('click', function () { $('#dlgNuevo').close(); reiniciarVuelo(); });
+
+    medirCabecera();
+    window.addEventListener('resize', medirCabecera);
+    if (window.ResizeObserver) new ResizeObserver(medirCabecera).observe($('#cabecera'));
+  }
+
+  iniciar();
+})();
+</script>
+</body>
+</html>
